@@ -57,12 +57,11 @@ const OnWebhook: FC<OnWebhookProps> = ({
     }
     try {
       await api.post(`${config.server_url}/run`, {
-        body: {
-          nodeData: formValues,
-          httpMethod: formValues.httpMethod,
-          path: formValues.path,
-          auth: formValues.auth,
-        },
+        webhookId: webhookId,
+        nodeData: formValues,
+        httpMethod: formValues.httpMethod,
+        path: formValues.path,
+        auth: formValues.auth,
       });
       sendMessage({ type: "subscribe", webhookId });
       setState("listening");
@@ -70,6 +69,7 @@ const OnWebhook: FC<OnWebhookProps> = ({
         const data = JSON.parse(event.data);
         if (data.type === "webhook_event") setPayload(data.payload);
         setState("completed");
+        sendMessage({ type: "unsubscribe", webhookId });
       };
     } catch (err) {
       setState("error");
@@ -99,7 +99,7 @@ const OnWebhook: FC<OnWebhookProps> = ({
 
   return (
     <div className="w-full h-full flex gap-4">
-      <div className="max-w-64 w-full flex items-center justify-center">
+      <div className="max-w-64   w-full flex items-center justify-center">
         <div className="flex flex-col items-center gap-6 w-full">
           <Button variant="default" onClick={execute}>
             Listen for Test Event

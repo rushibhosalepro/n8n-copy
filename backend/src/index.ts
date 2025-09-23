@@ -363,11 +363,29 @@ app.post("/signIn", async (req, res) => {
 });
 
 // executors
-const webhookResults: Record<string, any> = {};
-const listeners: Map<string, { data: any; sockets: Set<WebSocket> }> =
-  new Map();
+interface Listener {
+  nodeData: any;
+  httpMethod: string;
+  path?: string;
+  auth?: string;
+  sockets: Set<WebSocket>;
+}
+
+const listeners: Map<string, Listener> = new Map();
+
 app.all("/webook-test/:webhookId", async (req, res) => {
   const { webhookId } = req.params;
+
+  if (!listeners.has(webhookId)) {
+    return res.status(404).json({ error: "Webhook not registered" });
+  }
+
+  const listener = listeners.get(webhookId)!;
+  if (req.method !== listener.httpMethod) {
+    return res
+      .status(405)
+      .json({ error: `Method ${req.method} not allowed for this webhook` });
+  }
 
   const payload = {
     id: webhookId,
@@ -378,57 +396,81 @@ app.all("/webook-test/:webhookId", async (req, res) => {
     method: req.method,
   };
 
-  webhookResults[webhookId] = payload;
+  listener.sockets.forEach((socket) => {
+    if (socket.readyState === 1) {
+      socket.send(JSON.stringify({ type: "webhook_event", payload }));
+    }
+  });
 
-  if (listeners.has(webhookId)) {
-    listeners.get(webhookId)!.sockets.forEach((socket) => {
-      if (socket.readyState === 1) {
-        socket.send(JSON.stringify({ type: "webhook_event", payload }));
-      }
-    });
-  }
-
-  res.json({ msg: "workflow" });
+  res.json({ msg: "workflow", received: true });
 });
 
 app.post("/run", async (req, res) => {
   try {
     const { nodeData, httpMethod, path, auth, webhookId } = req.body;
 
-    // if (!webhookId) {
-    //   return res.status(400).json({ error: "webhookId is required" });
-    // }
+    if (!webhookId) {
+      return res.status(400).json({ error: "webhookId is required" });
+    }
+    if (!httpMethod) {
+      return res.status(400).json({ error: "httpMethod is required" });
+    }
 
-    // if (!listeners.has(webhookId)) {
-    //   listeners.set(webhookId, { data: null, sockets: new Set() });
-    // }
-    // listeners.get(webhookId)!.data = { nodeData, httpMethod, path, auth };
+    if (!listeners.has(webhookId)) {
+      listeners.set(webhookId, {
+        nodeData,
+        httpMethod,
+        path,
+        auth,
+        sockets: new Set(),
+      });
+    } else {
+      const existing = listeners.get(webhookId)!;
+      existing.nodeData = nodeData;
+      existing.httpMethod = httpMethod;
+      existing.path = path;
+      existing.auth = auth;
+    }
 
-    // listeners.get(webhookId)!.sockets.forEach((socket) => {
-    //   socket.send(JSON.stringify({ type: "ready", payload: { webhookId } }));
-    // });
-
-    res.json({ msg: "Webhook listener is ready", webhookId });
+    res.json({
+      msg: "Webhook listener registered",
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
-
 // create sockets
 wss.on("connection", (ws) => {
   ws.on("message", (msg: string) => {
-    const data = JSON.parse(msg);
-    switch (data.type) {
-      case "subscribe": {
-        const webhookId: string = data.webhookId;
-        if (!listeners.has(webhookId)) {
-          listeners.set(webhookId, { data: null, sockets: new Set() });
-        }
-        listeners.get(webhookId)!.sockets.add(ws);
+    try {
+      const data = JSON.parse(msg);
 
-        break;
+      switch (data.type) {
+        case "subscribe": {
+          const webhookId: string = data.webhookId;
+          if (!listeners.has(webhookId)) {
+            listeners.set(webhookId, {
+              nodeData: null,
+              httpMethod: "GET",
+              path: undefined,
+              auth: undefined,
+              sockets: new Set(),
+            });
+          }
+          listeners.get(webhookId)!.sockets.add(ws);
+          break;
+        }
+        case "unsubscribe": {
+          const webhookId: string = data.webhookId;
+          if (!listeners.has(webhookId)) return;
+          const sockets = listeners.get(webhookId)?.sockets;
+          sockets?.clear();
+          listeners.delete(webhookId);
+        }
       }
+    } catch (err) {
+      console.error("Invalid WS message:", err);
     }
   });
 });
