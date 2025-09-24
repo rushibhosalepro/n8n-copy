@@ -7,7 +7,6 @@ import http from "http";
 import jwt from "jsonwebtoken";
 import { generate } from "short-uuid";
 import streamToString from "stream-to-string";
-import type WebSocket from "ws";
 import { WebSocketServer } from "ws";
 import { config } from "./config/env";
 import { prisma } from "./lib/prisma";
@@ -15,11 +14,18 @@ import { r2 } from "./lib/s3";
 
 import bcrypt from "bcrypt";
 
+import { ExecutionManager } from "./execution";
+import { formBuilder } from "./formBuilder";
+import { getSingleNode } from "./lib";
+import { ListenerManager } from "./listener";
+import type { INode } from "./schema";
+
 const app = express();
+app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
-
 app.use(
   cors({
     origin: "http://localhost:3000",
@@ -29,6 +35,9 @@ app.use(
 
 app.use(express.json());
 app.use(cookieParser());
+
+const listenerManager = new ListenerManager();
+const executionManager = new ExecutionManager(listenerManager);
 // create new workflow
 app.get("/create", async (req, res) => {
   try {
@@ -59,7 +68,6 @@ app.get("/workflow/:projectId", async (req, res) => {
           .userId
       : null;
 
-    console.log(userId);
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
     const { projectId } = req.params;
 
@@ -127,8 +135,6 @@ app.patch("/workflow/:projectId", async (req, res) => {
         .userId
     : null;
 
-  console.log(userId);
-
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   const { projectId } = req.params;
   const { active, name, nodes, connections } = req.body;
@@ -139,7 +145,6 @@ app.patch("/workflow/:projectId", async (req, res) => {
     });
 
     if (!workflow) return res.status(404).json({ error: "Workflow not found" });
-    console.log(workflow);
 
     let objectKey = workflow.objectKey;
 
@@ -220,8 +225,6 @@ app.get("/auth/google/callback", async (req, res) => {
       redirect_uri: config.google_redirect_uri,
       grant_type: "authorization_code",
     });
-
-    console.log("Tokens:", data);
 
     const credential = await prisma.credential.create({
       data: {
@@ -362,111 +365,134 @@ app.post("/signIn", async (req, res) => {
   }
 });
 
-// executors
-interface Listener {
-  nodeData: any;
-  httpMethod: string;
-  path?: string;
-  auth?: string;
-  sockets: Set<WebSocket>;
+interface SplatParams {
+  splat: string;
 }
+app.all("/webhook-test/*url", async (req, res) => {
+  try {
+    const params = req.params as { url: string[] };
+    const webhookId = params.url.join("/");
 
-const listeners: Map<string, Listener> = new Map();
+    if (!webhookId || !listenerManager.hasListener(webhookId)) {
+      return res.status(404).json({ error: "Webhook not registered" });
+    }
 
-app.all("/webook-test/:webhookId", async (req, res) => {
-  const { webhookId } = req.params;
+    const node = listenerManager.getNode(webhookId);
 
-  if (!listeners.has(webhookId)) {
+    if (!node) {
+      return res.status(404).json({ error: "Webhook node not found" });
+    }
+
+    const httpMethod = node.parameters?.httpMethod ?? "GET";
+    const path = node.parameters?.path ?? webhookId;
+
+    if (req.method !== httpMethod) {
+      return res.status(405).json({
+        error: `Invalid HTTP method. Expected ${httpMethod}, got ${req.method}`,
+      });
+    }
+
+    if (path !== webhookId) {
+      return res.status(400).json({ error: "URL not matching node path" });
+    }
+
+    const payload = {
+      id: node.webhookId,
+      timestamp: new Date(),
+      query: req.query,
+      body: req.body,
+      headers: req.headers,
+      method: req.method,
+      webhookUrl: `${config.url}:${config.port}/webhook-test/${webhookId}`,
+    };
+
+    listenerManager.emit(webhookId, { type: "webhook_event", payload });
+
+    await executionManager.executeForWebhook(webhookId, payload);
+
+    listenerManager.removeListener(webhookId);
+
+    res.json({ msg: "Webhook received and workflow executed" });
+  } catch (err) {
+    console.error("Webhook error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.post("/run", (req, res) => {
+  const payload = req.body;
+  if (!payload || !payload.workflowData) {
+    return res.status(400).json({ error: "workflowData is required" });
+  }
+
+  const triggerNodes: INode[] = payload.startNodes.map((nodeId: string) =>
+    getSingleNode(payload.workflowData, nodeId)
+  );
+
+  if (triggerNodes.length === 0) {
+    return res.status(404).json({ error: "No valid start nodes found" });
+  }
+
+  triggerNodes.forEach((node: INode) => {
+    listenerManager.addListener(node);
+    executionManager.executionFlow(node.webhookId, payload);
+  });
+
+  res.json({ message: "ready to execute" });
+});
+
+app.get("/form-test/:webhookId", async (req, res) => {
+  const webhookId = req.params.webhookId;
+
+  if (!webhookId || !listenerManager.hasListener(webhookId)) {
     return res.status(404).json({ error: "Webhook not registered" });
   }
 
-  const listener = listeners.get(webhookId)!;
-  if (req.method !== listener.httpMethod) {
-    return res
-      .status(405)
-      .json({ error: `Method ${req.method} not allowed for this webhook` });
+  const node = listenerManager.getNode(webhookId);
+
+  if (!node) {
+    return res.status(404).json({ error: "Webhook node not found" });
   }
 
-  const payload = {
-    id: webhookId,
-    timestamp: new Date(),
-    query: req.query,
-    body: req.body,
-    headers: req.headers,
-    method: req.method,
-  };
-
-  listener.sockets.forEach((socket) => {
-    if (socket.readyState === 1) {
-      socket.send(JSON.stringify({ type: "webhook_event", payload }));
-    }
-  });
-
-  res.json({ msg: "workflow", received: true });
+  res.setHeader("Content-Type", "text/html");
+  res.send(
+    formBuilder({
+      webhookId: webhookId,
+      formTitle: node.parameters.formTitle,
+      formDescription: node.parameters.formDescription,
+      formFields: node.parameters.formFields,
+    })
+  );
 });
-
-app.post("/run", async (req, res) => {
-  try {
-    const { nodeData, httpMethod, path, auth, webhookId } = req.body;
-
-    if (!webhookId) {
-      return res.status(400).json({ error: "webhookId is required" });
-    }
-    if (!httpMethod) {
-      return res.status(400).json({ error: "httpMethod is required" });
-    }
-
-    if (!listeners.has(webhookId)) {
-      listeners.set(webhookId, {
-        nodeData,
-        httpMethod,
-        path,
-        auth,
-        sockets: new Set(),
-      });
-    } else {
-      const existing = listeners.get(webhookId)!;
-      existing.nodeData = nodeData;
-      existing.httpMethod = httpMethod;
-      existing.path = path;
-      existing.auth = auth;
-    }
-
-    res.json({
-      msg: "Webhook listener registered",
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
+app.post("/:webhookId", async (req, res) => {
+  const webhookId = req.params.webhookId;
+  const data = await req.body;
+  if (!webhookId || !listenerManager.hasListener(webhookId)) {
+    return res.status(404).json({ error: "Webhook not registered" });
   }
+  const payload = { data, id: webhookId };
+  listenerManager.emit(webhookId, { type: "webhook_event", payload });
+
+  await executionManager.executeForWebhook(webhookId, payload);
+
+  listenerManager.removeListener(webhookId);
+
+  res.json({ msg: "Webhook received and workflow executed" });
 });
 // create sockets
 wss.on("connection", (ws) => {
   ws.on("message", (msg: string) => {
     try {
       const data = JSON.parse(msg);
+      const webhookId: string = data.webhookId;
 
       switch (data.type) {
         case "subscribe": {
-          const webhookId: string = data.webhookId;
-          if (!listeners.has(webhookId)) {
-            listeners.set(webhookId, {
-              nodeData: null,
-              httpMethod: "GET",
-              path: undefined,
-              auth: undefined,
-              sockets: new Set(),
-            });
-          }
-          listeners.get(webhookId)!.sockets.add(ws);
+          listenerManager.participate(webhookId, ws);
           break;
         }
         case "unsubscribe": {
-          const webhookId: string = data.webhookId;
-          if (!listeners.has(webhookId)) return;
-          const sockets = listeners.get(webhookId)?.sockets;
-          sockets?.clear();
-          listeners.delete(webhookId);
+          listenerManager.removeListener(webhookId);
         }
       }
     } catch (err) {

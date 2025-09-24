@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -7,189 +8,224 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { config } from "@/config";
-import useSocket from "@/hooks/useSocket";
-import api from "@/lib/api";
-import { Atom, Copy } from "lucide-react";
-import { FC, useState } from "react";
+import useCopy from "@/hooks/useCopy";
+import { Check, Copy, Star } from "lucide-react";
+import { FC, useEffect, useState } from "react";
 
 const httpMethods = ["GET", "POST"] as const;
 type HttpMethod = (typeof httpMethods)[number];
 
 interface OnWebhookProps {
   webhookId: string;
+  nodeEvents: any;
   initialValues?: {
-    urls?: string;
     httpMethod?: HttpMethod;
     path?: string;
-    auth?: string;
   };
-  onChange?: (values: {
-    httpMethod: HttpMethod;
-    path?: string;
-    auth?: string;
-  }) => void;
+  execute: () => void;
+  onChange?: (values: { httpMethod: HttpMethod; path?: string }) => void;
 }
 
 const OnWebhook: FC<OnWebhookProps> = ({
   webhookId,
   initialValues,
+  execute,
+  nodeEvents,
   onChange,
 }) => {
-  const { socket, isReady, sendMessage } = useSocket();
-  const [copied, setCopied] = useState(false);
-  const [payload, setPayload] = useState(null);
-  const testURL = `${config.server_url}/webook-test/${webhookId}`;
   const [state, setState] = useState<
     "idle" | "listening" | "completed" | "error"
   >("idle");
+
   const [formValues, setFormValues] = useState({
-    urls: initialValues?.urls || "",
     httpMethod: initialValues?.httpMethod || "GET",
-    path: webhookId || "",
-    auth: initialValues?.auth || "none",
+    path: initialValues?.path || webhookId || "",
   });
+  const url = `${config.server_url}/webhook-test/${formValues?.path}`;
 
-  const execute = async () => {
-    if (!isReady) {
-      console.warn("WebSocket not ready yet");
-      return;
-    }
+  const { copied, copyToClipboard } = useCopy(url);
+  const updateFormValues = (updated: Partial<typeof formValues>) => {
+    const merged = { ...formValues, ...updated };
+    setFormValues(merged);
+    onChange?.(merged);
+  };
+
+  useEffect(() => {
+    if (nodeEvents) setState("idle");
+  }, [nodeEvents]);
+  const testHandler = async () => {
     try {
-      await api.post(`${config.server_url}/run`, {
-        webhookId: webhookId,
-        nodeData: formValues,
-        httpMethod: formValues.httpMethod,
-        path: formValues.path,
-        auth: formValues.auth,
-      });
-      sendMessage({ type: "subscribe", webhookId });
       setState("listening");
-      socket!.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.type === "webhook_event") setPayload(data.payload);
-        setState("completed");
-        sendMessage({ type: "unsubscribe", webhookId });
-      };
-    } catch (err) {
+      execute();
+    } catch (error) {
       setState("error");
-      console.error("Error executing webhook test:", err);
     }
-  };
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { id, value } = e.target;
-    const updated = { ...formValues, [id]: value };
-    setFormValues(updated);
-    onChange?.(updated);
-  };
-
-  const handleSelectChange = (key: keyof typeof formValues, value: string) => {
-    const updated = { ...formValues, [key]: value };
-    setFormValues(updated);
-    onChange?.(updated);
-  };
-
-  const copyToClipboard = () => {
-    if (!testURL) return;
-    navigator.clipboard.writeText(testURL);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
   };
 
   return (
-    <div className="w-full h-full flex gap-4">
-      <div className="max-w-64   w-full flex items-center justify-center">
-        <div className="flex flex-col items-center gap-6 w-full">
-          <Button variant="default" onClick={execute}>
-            Listen for Test Event
-          </Button>
-          {state === "listening" && (
-            <div className="flex flex-col items-center gap-3 w-full">
-              <p className="text-sm font-medium text-gray-600">
-                Listening for events…
-              </p>
-              <div className="flex items-center justify-between w-full bg-gray-100 rounded-xl px-3 py-2">
-                <span className="text-xs break-all">{testURL}</span>
-                <Button variant="ghost" size="icon" onClick={copyToClipboard}>
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </div>
-              {copied && <p className="text-xs text-green-600">Copied!</p>}
+    <div className="flex items-center gap-4 h-full">
+      <div className="max-w-[250px] w-full h-full flex-col gap-4 flex items-center justify-center">
+        <Button onClick={testHandler} disabled={state === "listening"}>
+          Listen for test event
+        </Button>
+        {state === "listening" && (
+          <>
+            <div className="text-xs p-4 rounded-sm bg-gray-200 font-medium flex items-center gap-2">
+              <span className="break-all">{url}</span>
+              {copied ? (
+                <Check className="w-5 h-5" />
+              ) : (
+                <Copy
+                  className="w-5 h-5 cursor-pointer"
+                  onClick={copyToClipboard}
+                />
+              )}
             </div>
-          )}
-        </div>
+            <div>Listening...</div>
+          </>
+        )}
       </div>
 
-      <div className="w-96 shadow border rounded-sm p-3 flex-shrink-0">
-        <div className="flex items-center justify-between border-b p-2 mb-4">
-          <div className="flex items-center gap-1">
-            <Atom />
-            <h2 className="font-bold text-xl">Webhook</h2>
+      {/* form */}
+      <div className="max-w-[400px] w-full flex flex-col h-full shadow-sm rounded-xl border p-4">
+        <div className="pb-4 border-b mb-8 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Star className="w-5 h-5" />
+            <h2 className="text-lg font-extrabold">Webhook</h2>
           </div>
-          <Button variant="outline" size="sm" onClick={execute}>
-            Listen for Test Event
-          </Button>
+          {state !== "listening" && (
+            <Button onClick={testHandler} size={"sm"}>
+              Listen for test event
+            </Button>
+          )}
         </div>
-        <form className="space-y-4">
+
+        <form className="w-full space-y-6">
           <div className="space-y-2">
-            <label className="block font-semibold text-sm" htmlFor="urls">
-              Webhook URL [TEST]
-            </label>
-            <Input type="text" id="urls" value={testURL} readOnly />
+            <Label className="font-bold text-sm">Webhook URL</Label>
+            <div className="text-xs p-4 rounded-sm bg-gray-200 font-medium space-x-2 flex items-center">
+              <Button
+                onClick={copyToClipboard}
+                className="text-xs cursor-pointer"
+              >
+                GET
+              </Button>
+              <span className="break-all">{url}</span>
+            </div>
           </div>
+
           <div className="space-y-2">
-            <label className="block text-xs font-semibold">HTTP Method</label>
+            <Label className="font-bold text-sm">HTTP Method</Label>
             <Select
               value={formValues.httpMethod}
-              onValueChange={(val) => handleSelectChange("httpMethod", val)}
+              onValueChange={(val) =>
+                updateFormValues({ httpMethod: val as HttpMethod })
+              }
             >
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {httpMethods.map((method) => (
-                  <SelectItem key={method} value={method}>
-                    {method}
+                {httpMethods.map((http) => (
+                  <SelectItem value={http} key={http}>
+                    {http}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
+
           <div className="space-y-2">
-            <label className="block font-semibold text-sm" htmlFor="path">
-              Path
-            </label>
+            <Label className="font-bold text-sm">Path</Label>
             <Input
               id="path"
-              type="text"
+              className="font-semibold text-xs"
               value={formValues.path}
-              onChange={handleInputChange}
+              onChange={(e) => updateFormValues({ path: e.target.value })}
             />
-          </div>
-          <div className="space-y-2">
-            <label className="block text-xs font-semibold">Auth</label>
-            <Select
-              value={formValues.auth}
-              onValueChange={(val) => handleSelectChange("auth", val)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">None</SelectItem>
-                <SelectItem value="basic">Basic Auth</SelectItem>
-                <SelectItem value="header">Header Auth</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
         </form>
       </div>
 
-      <div className=" w-full border p-3 rounded  overflow-auto">
-        <pre className="text-xs text-gray-700">
-          {JSON.stringify(payload, null, 2)}
-        </pre>
+      {/* output */}
+      <div className="flex-1 flex flex-col h-full p-4 rounded-xl overflow-auto">
+        <h3 className="font-semibold text-gray-500 mb-5">Output</h3>
+        {nodeEvents && (
+          <div className="flex-1 flex h-full">
+            <Table className="w-full table-fixed ">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-left  w-md">Headers</TableHead>
+                  <TableHead className="text-left  w-[250px]">Params</TableHead>
+                  <TableHead className="text-left  w-[250px]">Query</TableHead>
+                  <TableHead className="text-left  w-[250px]">Body</TableHead>
+                  <TableHead className="text-left  w-[250px]">
+                    Webhook URL
+                  </TableHead>
+                  <TableHead className="text-left  w-[250px]">
+                    Execution Mode
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow>
+                  <TableCell className="align-top text-left text-xs">
+                    <pre className="whitespace-pre-wrap break-words max-w-sm">
+                      {nodeEvents?.headers
+                        ? JSON.stringify(nodeEvents.headers, null, 2)
+                        : "-"}
+                    </pre>
+                  </TableCell>
+
+                  <TableCell className="align-top text-left text-xs">
+                    <pre className="whitespace-pre-wrap break-words max-w-sm">
+                      {nodeEvents?.params
+                        ? JSON.stringify(nodeEvents.params, null, 2)
+                        : "-"}
+                    </pre>
+                  </TableCell>
+
+                  <TableCell className="align-top text-left text-xs">
+                    <pre className="whitespace-pre-wrap break-words max-w-sm">
+                      {nodeEvents?.query
+                        ? JSON.stringify(nodeEvents.query, null, 2)
+                        : "-"}
+                    </pre>
+                  </TableCell>
+
+                  <TableCell className="align-top text-left text-xs">
+                    <pre className="whitespace-pre-wrap break-words max-w-sm">
+                      {nodeEvents?.body
+                        ? JSON.stringify(nodeEvents.body, null, 2)
+                        : "-"}
+                    </pre>
+                  </TableCell>
+
+                  <TableCell className="align-top text-left text-xs">
+                    <pre className="whitespace-pre-wrap break-words max-w-sm">
+                      {nodeEvents?.webhookUrl ?? "-"}
+                    </pre>
+                  </TableCell>
+
+                  <TableCell className="align-top text-left text-xs">
+                    <pre className="whitespace-pre-wrap break-words max-w-sm">
+                      {nodeEvents?.executionMode ?? "-"}
+                    </pre>
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </div>
     </div>
   );

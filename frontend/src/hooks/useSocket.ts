@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const useSocket = (url: string = config.ws_url) => {
   const [isReady, setIsReady] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
-  console.log(url);
+  // console.log(url);
 
   useEffect(() => {
     const socket = new WebSocket(url);
@@ -22,9 +22,9 @@ const useSocket = (url: string = config.ws_url) => {
       setIsReady(false);
     };
 
-    socket.onerror = (err) => {
-      console.error("WebSocket error", err);
-    };
+    // socket.onerror = (err) => {
+    //   console.error("WebSocket error", err);
+    // };
 
     return () => {
       socket.close();

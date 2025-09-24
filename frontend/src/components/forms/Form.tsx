@@ -9,7 +9,9 @@ import { FC } from "react";
 interface Props {
   onFormClose: () => void;
   node: Node | null;
+  execute: () => void;
   onUpdate: (data: any) => void;
+  nodeEvents: any;
 }
 
 const AvailableForms = {
@@ -17,9 +19,16 @@ const AvailableForms = {
   WebhookTrigger: onWebhook,
 };
 type AvailableFormKey = keyof typeof AvailableForms;
-const Form: FC<Props> = ({ onFormClose, node, onUpdate }) => {
+
+const Form: FC<Props> = ({
+  onFormClose,
+  node,
+  onUpdate,
+  execute,
+  nodeEvents,
+}) => {
   if (!node) return;
-  console.log(node);
+
   const type = node.data.type as AvailableFormKey;
   const parameters = node.data.parameters ?? {};
   const SelectedForm = AvailableForms[type];
@@ -36,8 +45,10 @@ const Form: FC<Props> = ({ onFormClose, node, onUpdate }) => {
         <div className="w-full h-full">
           {SelectedForm ? (
             <SelectedForm
+              nodeEvents={nodeEvents}
               webhookId={node.data.webhookId as string}
               initialValues={parameters}
+              execute={execute}
               onChange={(values) => {
                 onUpdate({
                   ...node,

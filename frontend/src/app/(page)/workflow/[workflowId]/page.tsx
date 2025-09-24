@@ -13,7 +13,7 @@ const WorkflowPage = async ({ params }: Props) => {
   });
   const { wf, workflowData } = await response.data;
 
-  console.log(workflowData);
+  // console.log(workflowData);
 
   return (
     <main className="max-w-7xl mx-auto p-4 min-h-screen">

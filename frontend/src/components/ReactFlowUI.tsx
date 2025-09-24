@@ -7,7 +7,9 @@ import TriggerNode from "@/components/custom-node/TriggerNode";
 import Form from "@/components/forms/Form";
 import TriggerNodeMenu from "@/components/TriggerNodeMenu";
 import WorkflowHeader from "@/components/WorkflowHeader";
+import useSocket from "@/hooks/useSocket";
 import { createNode, generateId } from "@/lib/createNode";
+import { executeWorkflow } from "@/lib/execution";
 import { NodesType, WorkflowType } from "@/schema";
 import {
   Background,
@@ -51,6 +53,9 @@ const FlowContent: FC<FlowContentProps> = ({ wId, workflow, setWorkflow }) => {
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [configurationNode, setConfigurationNode] = useState<null | Node>(null);
   const { screenToFlowPosition } = useReactFlow();
+  const [nodeEvents, setNodeEvents] = useState<Record<string, any>>({});
+
+  const { isReady, sendMessage, socket } = useSocket();
 
   const [showAndOpenTriggerNodeMenu, setShowAndOpenTriggerNodeMenu] =
     useState(false);
@@ -62,6 +67,30 @@ const FlowContent: FC<FlowContentProps> = ({ wId, workflow, setWorkflow }) => {
 
   const [showAndOpenActionNodeMenu, setShowAndOpenActionNodeMenu] =
     useState(false);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleMessage = (msg: any) => {
+      try {
+        const data = JSON.parse(msg.data);
+
+        if (data.type === "webhook_event" && data.payload) {
+          const webhookId = String(data.payload.id);
+
+          setNodeEvents((prev) => ({
+            ...prev,
+            [webhookId]: data.payload,
+          }));
+        }
+      } catch (err) {
+        console.error("Invalid WS message", err);
+      }
+    };
+
+    socket.addEventListener("message", handleMessage);
+    return () => socket.removeEventListener("message", handleMessage);
+  }, [socket]);
 
   useEffect(() => {
     if (!workflow?.nodes) return;
@@ -306,6 +335,7 @@ const FlowContent: FC<FlowContentProps> = ({ wId, workflow, setWorkflow }) => {
     };
   }, [debouncedUpdateNodes]);
 
+  console.log(configurationNode);
   return (
     <div>
       <div className="flex items-center justify-between gap-4 mb-2">
@@ -323,10 +353,34 @@ const FlowContent: FC<FlowContentProps> = ({ wId, workflow, setWorkflow }) => {
       </div>
       {configurationNode && (
         <Form
+          nodeEvents={nodeEvents[configurationNode.data.webhookId as string]}
           node={configurationNode}
           onUpdate={(updatedNode) => {
             setConfigurationNode(updatedNode);
             debouncedUpdateNodes(updatedNode);
+          }}
+          execute={(prev?: boolean) => {
+            if (!configurationNode) return;
+            if (isReady) {
+              const parameters = configurationNode.data.parameters as {
+                path?: string;
+              };
+
+              const path = parameters?.path
+                ? parameters.path
+                : configurationNode.data.webhookId;
+
+              sendMessage(
+                JSON.stringify({
+                  type: "subscribe",
+                  webhookId: path,
+                })
+              );
+              executeWorkflow(workflow, {
+                destinationNodeId: configurationNode.data.id as string,
+                runUpToPrevious: prev,
+              });
+            }
           }}
           onFormClose={() => {
             setConfigurationNode(null);
@@ -367,7 +421,7 @@ const ReactFlowUI = ({ wf }: { wf: WorkflowType }) => {
     connections: wf.connections ?? {},
   });
 
-  console.log(`updated workflow`, workflow);
+  // console.log(`updated workflow`, workflow);
   const updateWorkflow = (newWf: WorkflowType) => {
     setWorkflow((prev) => ({
       ...prev,
