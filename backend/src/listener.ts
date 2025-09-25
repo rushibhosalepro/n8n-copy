@@ -1,4 +1,4 @@
-import type WebSocket from "ws";
+import WebSocket from "ws";
 import type { INode } from "./schema";
 
 interface Listener {
@@ -27,7 +27,6 @@ export class ListenerManager {
   }
 
   participate(webhookId: string, ws: WebSocket) {
-    console.log("participated", webhookId);
     if (!this.listeners.has(webhookId)) {
       this.listeners.set(webhookId, {
         nodeData: null,

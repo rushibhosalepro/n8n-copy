@@ -197,7 +197,10 @@ app.get("/auth/google", (req, res) => {
     access_type: "offline",
     response_type: "code",
     prompt: "consent",
-    scope: ["https://www.googleapis.com/auth/gmail.send"].join(" "),
+    scope: [
+      "https://mail.google.com/",
+      "https://www.googleapis.com/auth/userinfo.email",
+    ].join(" "),
   };
 
   const qs = new URLSearchParams(options).toString();
@@ -225,12 +228,22 @@ app.get("/auth/google/callback", async (req, res) => {
       redirect_uri: config.google_redirect_uri,
       grant_type: "authorization_code",
     });
-
+    const { data: userInfo } = await axios.get(
+      "https://www.googleapis.com/oauth2/v2/userinfo",
+      {
+        headers: {
+          Authorization: `Bearer ${data.access_token}`,
+        },
+      }
+    );
     const credential = await prisma.credential.create({
       data: {
         name: "My Gmail Account",
         type: "GmailNode",
-        data: data,
+        data: {
+          ...data,
+          email: userInfo.email,
+        },
         userId,
       },
     });
@@ -285,6 +298,31 @@ app.get("/credentials", async (req, res) => {
       },
       where: { userId },
     });
+    res.json(creds);
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to list credentials" });
+  }
+});
+
+app.get("/credential/:nodeType", async (req, res) => {
+  try {
+    const userId = req.cookies?.token
+      ? (jwt.verify(req.cookies.token, config.jwt_secret) as { userId: string })
+          .userId
+      : null;
+
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    const nodeType = req.params.nodeType;
+    const creds = await prisma.credential.findMany({
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+      },
+      where: { userId, type: nodeType },
+    });
+    // console.log(nodeType, creds);
     res.json(creds);
   } catch (err: any) {
     console.error(err);
@@ -458,9 +496,9 @@ app.get("/form-test/:webhookId", async (req, res) => {
   res.send(
     formBuilder({
       webhookId: webhookId,
-      formTitle: node.parameters.formTitle,
-      formDescription: node.parameters.formDescription,
-      formFields: node.parameters.formFields,
+      formTitle: node.parameters.formTitle ?? "",
+      formDescription: node.parameters.formDescription ?? "",
+      formFields: node.parameters.formFields ?? [],
     })
   );
 });
@@ -470,10 +508,10 @@ app.post("/:webhookId", async (req, res) => {
   if (!webhookId || !listenerManager.hasListener(webhookId)) {
     return res.status(404).json({ error: "Webhook not registered" });
   }
-  const payload = { data, id: webhookId };
-  listenerManager.emit(webhookId, { type: "webhook_event", payload });
 
-  await executionManager.executeForWebhook(webhookId, payload);
+  executionManager.executeForForm(webhookId, data);
+  const payload = { data, id: webhookId };
+  listenerManager.emit(webhookId, { type: "execution_completed", payload });
 
   listenerManager.removeListener(webhookId);
 
