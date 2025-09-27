@@ -356,6 +356,11 @@ const FlowContent: FC<FlowContentProps> = ({ wId, workflow, setWorkflow }) => {
             onSelect={onActionNodeItemClicked}
             open={showAndOpenActionNodeMenu}
           />
+          {/* 
+          <AIModelMenu
+            onSelect={onActionNodeItemClicked}
+            open={showAndOpenActionNodeMenu}
+          /> */}
         </div>
       </div>
       {configurationNode && (
