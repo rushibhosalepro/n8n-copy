@@ -11,6 +11,7 @@ import useSocket from "@/hooks/useSocket";
 import { createNode, generateId } from "@/lib/createNode";
 import { executeWorkflow } from "@/lib/execution";
 import { NodesType, WorkflowType } from "@/schema";
+import { WorkflowState } from "@/types";
 import {
   Background,
   Connection,
@@ -53,7 +54,9 @@ const FlowContent: FC<FlowContentProps> = ({ wId, workflow, setWorkflow }) => {
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [configurationNode, setConfigurationNode] = useState<null | Node>(null);
   const { screenToFlowPosition } = useReactFlow();
-  const [nodeEvents, setNodeEvents] = useState<Record<string, any>>({});
+  const [runData, setRunData] = useState<Record<string, any>>({});
+
+  const [state, setState] = useState<WorkflowState>("idle");
 
   const { isReady, sendMessage, socket } = useSocket();
 
@@ -68,22 +71,29 @@ const FlowContent: FC<FlowContentProps> = ({ wId, workflow, setWorkflow }) => {
   const [showAndOpenActionNodeMenu, setShowAndOpenActionNodeMenu] =
     useState(false);
 
+  const updateState = (newState: WorkflowState) => {
+    setState(newState);
+  };
   useEffect(() => {
     if (!socket) return;
 
     const handleMessage = (msg: any) => {
+      console.log(`handler msgs`, msg);
       try {
         const data = JSON.parse(msg.data);
 
         if (data.type === "webhook_event" && data.payload) {
           const webhookId = String(data.payload.id);
 
-          setNodeEvents((prev) => ({
+          setRunData((prev) => ({
             ...prev,
             [webhookId]: data.payload,
           }));
+        } else if (data.type === "execution_completed") {
+          setState("completed");
         }
       } catch (err) {
+        setState("error");
         console.error("Invalid WS message", err);
       }
     };
@@ -304,7 +314,6 @@ const FlowContent: FC<FlowContentProps> = ({ wId, workflow, setWorkflow }) => {
 
   const debouncedUpdateNodes = useCallback(
     debounce((updatedNode: Node) => {
-      // console.log(updatedNode);
       const { parameters, credentials } = updatedNode.data;
       setNodes((prev) =>
         prev.map((n) => (n.id === updatedNode.id ? updatedNode : n))
@@ -327,7 +336,6 @@ const FlowContent: FC<FlowContentProps> = ({ wId, workflow, setWorkflow }) => {
     }, 500),
     [setNodes]
   );
-  // console.log(nodes);
 
   useEffect(() => {
     return () => {
@@ -335,7 +343,6 @@ const FlowContent: FC<FlowContentProps> = ({ wId, workflow, setWorkflow }) => {
     };
   }, [debouncedUpdateNodes]);
 
-  console.log(configurationNode);
   return (
     <div>
       <div className="flex items-center justify-between gap-4 mb-2">
@@ -353,7 +360,10 @@ const FlowContent: FC<FlowContentProps> = ({ wId, workflow, setWorkflow }) => {
       </div>
       {configurationNode && (
         <Form
-          nodeEvents={nodeEvents[configurationNode.data.webhookId as string]}
+          state={state}
+          updateState={updateState}
+          workFlow={workflow}
+          runData={runData}
           node={configurationNode}
           onUpdate={(updatedNode) => {
             setConfigurationNode(updatedNode);
@@ -362,21 +372,22 @@ const FlowContent: FC<FlowContentProps> = ({ wId, workflow, setWorkflow }) => {
           execute={(prev?: boolean) => {
             if (!configurationNode) return;
             if (isReady) {
-              const parameters = configurationNode.data.parameters as {
-                path?: string;
-              };
+              // const parameters = configurationNode.data.parameters as {
+              //   path?: string;
+              // };
 
-              const path = parameters?.path
-                ? parameters.path
-                : configurationNode.data.webhookId;
+              // const path = parameters?.path
+              //   ? parameters.path
+              //   : configurationNode.data.webhookId;
 
-              sendMessage(
-                JSON.stringify({
-                  type: "subscribe",
-                  webhookId: path,
-                })
-              );
+              // sendMessage(
+              //   JSON.stringify({
+              //     type: "subscribe",
+              //     webhookId: path,
+              //   })
+              // );
               executeWorkflow(workflow, {
+                sendMessage,
                 destinationNodeId: configurationNode.data.id as string,
                 runUpToPrevious: prev,
               });
@@ -399,9 +410,7 @@ const FlowContent: FC<FlowContentProps> = ({ wId, workflow, setWorkflow }) => {
           fitView
           onConnectEnd={onConnectEnd}
           onNodeClick={handleNodeClick}
-          onNodeDoubleClick={(evt, node) => {
-            console.log("double cliked", node);
-          }}
+          onNodeDoubleClick={(evt, node) => {}}
           defaultViewport={{ x: 0, y: 0, zoom: 1.2 }}
         >
           <Background />
@@ -421,7 +430,6 @@ const ReactFlowUI = ({ wf }: { wf: WorkflowType }) => {
     connections: wf.connections ?? {},
   });
 
-  // console.log(`updated workflow`, workflow);
   const updateWorkflow = (newWf: WorkflowType) => {
     setWorkflow((prev) => ({
       ...prev,

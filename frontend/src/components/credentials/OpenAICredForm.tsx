@@ -5,9 +5,8 @@ import { FC, useState } from "react";
 
 interface Props {
   onSave: (data: any) => void;
-  onClose: () => void;
 }
-const OpenAICredForm: FC<Props> = ({ onClose, onSave }) => {
+const OpenAICredForm: FC<Props> = ({ onSave }) => {
   const [apiKey, setAPIKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("https://api.openai.com/v1");
   const saveData = () => {

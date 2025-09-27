@@ -1,3 +1,4 @@
+import axios from "axios";
 import Mustache from "mustache";
 import nodemailer from "nodemailer";
 import { config } from "./config/env";
@@ -26,18 +27,7 @@ export class ExecutionManager {
     }
   }
 
-  executeForWebhook(webhookId: string, payload: any) {
-    const sequence = this.executionOrder.get(webhookId);
-    if (!sequence) return;
-
-    for (const node of sequence.nodes) {
-      console.log("Executing node:", node.id, "with payload:", payload);
-    }
-
-    return sequence;
-  }
-
-  executeForForm(webhookId: string, payload: any) {
+  execute(webhookId: string, payload: any) {
     const sequence = this.getExecutionSequence(webhookId);
     let prevPayload = payload;
     if (!sequence) return;
@@ -46,6 +36,8 @@ export class ExecutionManager {
 
       if (node.type === "GmailNode") {
         payload = this.sendAMessage(node, payload);
+      } else if (node.type === "TelegramNode") {
+        payload = this.sendATextMessage(node, payload);
       }
 
       this.listenerManager.emit(webhookId, {
@@ -54,7 +46,30 @@ export class ExecutionManager {
       });
     }
   }
+  async sendATextMessage(node: INode, payload: any) {
+    const id = node.parameters.credentials[0].id;
+    const cred = await prisma.credential.findFirst({
+      where: {
+        id,
+      },
+    });
+    if (!cred || !cred.data) return;
+    const data = cred.data as any;
+    const accessToken = data.accessToken as string;
 
+    const chatId = Mustache.render(node.parameters.chatId, payload);
+
+    const message = Mustache.render(node.parameters.message, payload);
+    const res = await axios.post(
+      `https://api.telegram.org/bot${accessToken}/sendMessage`,
+      {
+        chat_id: chatId,
+        text: message,
+      }
+    );
+
+    return res.data;
+  }
   async sendAMessage(node: INode, payload: any) {
     const id = node.parameters.credentials[0].id;
     const cred = await prisma.credential.findFirst({
@@ -92,6 +107,7 @@ export class ExecutionManager {
     };
 
     const result = await transporter.sendMail(mailOptions);
+    return result;
   }
   getExecutionSequence(webhookId: string) {
     return this.executionOrder.get(webhookId);

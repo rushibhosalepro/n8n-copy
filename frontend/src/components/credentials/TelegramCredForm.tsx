@@ -7,9 +7,8 @@ import { FC, useState } from "react";
 
 interface Props {
   onSave: (data: any) => void;
-  onClose: () => void;
 }
-const TelegramCredForm: FC<Props> = ({ onClose, onSave }) => {
+const TelegramCredForm: FC<Props> = ({ onSave }) => {
   const [accessToken, setAccessToken] = useState("");
   const [baseUrl, setBaseUrl] = useState("https://api.telegram.org");
   const saveData = () => {

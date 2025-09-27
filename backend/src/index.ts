@@ -446,7 +446,9 @@ app.all("/webhook-test/*url", async (req, res) => {
 
     listenerManager.emit(webhookId, { type: "webhook_event", payload });
 
-    await executionManager.executeForWebhook(webhookId, payload);
+    await executionManager.execute(webhookId, payload);
+
+    listenerManager.emit(webhookId, { type: "execution_completed", payload });
 
     listenerManager.removeListener(webhookId);
 
@@ -509,7 +511,7 @@ app.post("/:webhookId", async (req, res) => {
     return res.status(404).json({ error: "Webhook not registered" });
   }
 
-  executionManager.executeForForm(webhookId, data);
+  executionManager.execute(webhookId, data);
   const payload = { data, id: webhookId };
   listenerManager.emit(webhookId, { type: "execution_completed", payload });
 
@@ -517,6 +519,7 @@ app.post("/:webhookId", async (req, res) => {
 
   res.json({ msg: "Webhook received and workflow executed" });
 });
+
 // create sockets
 wss.on("connection", (ws) => {
   ws.on("message", (msg: string) => {

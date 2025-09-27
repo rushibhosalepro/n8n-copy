@@ -18,6 +18,8 @@ import {
 } from "@/components/ui/table";
 import { config } from "@/config";
 import useCopy from "@/hooks/useCopy";
+import { INode } from "@/schema";
+import { WorkflowState } from "@/types";
 import { Check, Copy, Star } from "lucide-react";
 import { FC, useEffect, useState } from "react";
 
@@ -25,8 +27,11 @@ const httpMethods = ["GET", "POST"] as const;
 type HttpMethod = (typeof httpMethods)[number];
 
 interface OnWebhookProps {
+  prevNode?: INode | null;
   webhookId: string;
-  nodeEvents: any;
+  state: WorkflowState;
+  updateState: (newState: WorkflowState) => void;
+  runData: Record<string, any>;
   initialValues?: {
     httpMethod?: HttpMethod;
     path?: string;
@@ -39,12 +44,12 @@ const OnWebhook: FC<OnWebhookProps> = ({
   webhookId,
   initialValues,
   execute,
-  nodeEvents,
+  runData,
+  state,
+  updateState: setState,
   onChange,
 }) => {
-  const [state, setState] = useState<
-    "idle" | "listening" | "completed" | "error"
-  >("idle");
+  const nodeEvents = runData[webhookId];
 
   const [formValues, setFormValues] = useState({
     httpMethod: initialValues?.httpMethod || "GET",
@@ -64,7 +69,7 @@ const OnWebhook: FC<OnWebhookProps> = ({
   }, [nodeEvents]);
   const testHandler = async () => {
     try {
-      setState("listening");
+      setState("running");
       execute();
     } catch (error) {
       setState("error");
@@ -74,10 +79,10 @@ const OnWebhook: FC<OnWebhookProps> = ({
   return (
     <div className="flex items-center gap-4 h-full">
       <div className="max-w-[250px] w-full h-full flex-col gap-4 flex items-center justify-center">
-        <Button onClick={testHandler} disabled={state === "listening"}>
+        <Button onClick={testHandler} disabled={state === "running"}>
           Listen for test event
         </Button>
-        {state === "listening" && (
+        {state === "running" && (
           <>
             <div className="text-xs p-4 rounded-sm bg-gray-200 font-medium flex items-center gap-2">
               <span className="break-all">{url}</span>
@@ -102,7 +107,7 @@ const OnWebhook: FC<OnWebhookProps> = ({
             <Star className="w-5 h-5" />
             <h2 className="text-lg font-extrabold">Webhook</h2>
           </div>
-          {state !== "listening" && (
+          {state !== "running" && (
             <Button onClick={testHandler} size={"sm"}>
               Listen for test event
             </Button>

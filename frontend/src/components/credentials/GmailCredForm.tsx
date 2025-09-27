@@ -5,9 +5,8 @@ import { FC } from "react";
 
 interface Props {
   onSave: (data: any) => void;
-  onClose: () => void;
 }
-const GmailCredForm: FC<Props> = ({ onClose, onSave }) => {
+const GmailCredForm: FC<Props> = ({ onSave }) => {
   const startOAuth = () => {
     window.open(
       "http://localhost:3001/auth/google",

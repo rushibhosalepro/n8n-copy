@@ -8,3 +8,5 @@ export interface ExecutionRequest {
   triggerNode?: string;
   runData?: {};
 }
+
+export type WorkflowState = "idle" | "running" | "completed" | "error";

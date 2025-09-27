@@ -5,9 +5,8 @@ import { FC, useState } from "react";
 
 interface Props {
   onSave: (data: any) => void;
-  onClose: () => void;
 }
-const GeminiCredForm: FC<Props> = ({ onClose, onSave }) => {
+const GeminiCredForm: FC<Props> = ({ onSave }) => {
   const [apiKey, setAPIKey] = useState("");
   const [baseUrl, setBaseUrl] = useState(
     "https://generativelanguage.googleapis.com"

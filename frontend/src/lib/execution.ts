@@ -62,15 +62,39 @@ export const buildExecutionRequest = (
   };
 };
 
+export const getPreviousNode = (workflow: WorkflowType, nodeId: string) => {
+  for (const [sourceId, conn] of Object.entries(workflow.connections)) {
+    for (const branch of conn.main) {
+      for (const target of branch) {
+        if (target.id === nodeId)
+          return workflow.nodes.find((n) => n.id === sourceId);
+      }
+    }
+  }
+  return null;
+};
+
 export const executeWorkflow = async (
   workflow: WorkflowType,
   options: {
+    sendMessage?: any;
     destinationNodeId?: string;
     runFullWorkflow?: boolean;
     runUpToPrevious?: boolean;
   }
 ) => {
   const request = buildExecutionRequest(workflow, options);
+  const node = getTriggerNode(workflow);
+  const parameters = node?.parameters;
+
+  const path = parameters?.path ? parameters.path : node?.webhookId;
+
+  options.sendMessage(
+    JSON.stringify({
+      type: "subscribe",
+      webhookId: path,
+    })
+  );
   try {
     const response = await api.post(`/run`, request);
     return response.data;

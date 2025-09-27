@@ -11,6 +11,8 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { config } from "@/config/";
 import useCopy from "@/hooks/useCopy";
+import { INode } from "@/schema";
+import { WorkflowState } from "@/types";
 import { Check, Copy, NotebookPen, Trash2 } from "lucide-react";
 import { ChangeEvent, FC, useEffect, useState } from "react";
 
@@ -40,8 +42,11 @@ interface FormFields {
   required: boolean;
 }
 interface OnFormSubmissionProps {
+  prevNode?: INode | null;
   webhookId: string;
-  nodeEvents: any;
+  state: WorkflowState;
+  updateState: (newState: WorkflowState) => void;
+  runData: Record<string, any>;
   initialValues?: {
     formTitle?: string;
     formDescription?: string;
@@ -58,7 +63,9 @@ interface OnFormSubmissionProps {
 }
 const OnFormSubmission: FC<OnFormSubmissionProps> = ({
   execute,
-  nodeEvents,
+  runData,
+  state,
+  updateState: setState,
   initialValues,
   webhookId,
   onChange,
@@ -69,17 +76,14 @@ const OnFormSubmission: FC<OnFormSubmissionProps> = ({
     respondWhen: initialValues?.respondWhen || "",
     formFields: initialValues?.formFields || [],
   });
-  const [state, setState] = useState<
-    "idle" | "listening" | "completed" | "error"
-  >("idle");
-  const url = `${config.server_url}/form-test/${webhookId}`;
 
+  const url = `${config.server_url}/form-test/${webhookId}`;
+  const nodeEvents = runData[webhookId];
   const { copied, copyToClipboard } = useCopy(url);
   const updateState = (updated: typeof formValues) => {
     setFormValues(updated);
     onChange?.(updated);
   };
-  console.log("data", nodeEvents);
   const addFormElement = () => {
     const newElement: FormFields = {
       name: "",
@@ -125,7 +129,7 @@ const OnFormSubmission: FC<OnFormSubmissionProps> = ({
   }, [nodeEvents]);
   const testHandler = async () => {
     try {
-      setState("listening");
+      setState("running");
       execute();
     } catch (error) {
       setState("error");
@@ -134,10 +138,10 @@ const OnFormSubmission: FC<OnFormSubmissionProps> = ({
   return (
     <div className="flex items-center gap-4 h-full">
       <div className="max-w-[250px] w-full h-full flex-col gap-4 flex items-center justify-center">
-        <Button onClick={testHandler} disabled={state === "listening"}>
+        <Button onClick={testHandler} disabled={state === "running"}>
           Listen for test event
         </Button>
-        {state === "listening" && (
+        {state === "running" && (
           <>
             <div className="text-xs p-4 rounded-sm bg-gray-200 font-medium flex items-center gap-2">
               <span className="break-all">{url}</span>
@@ -154,13 +158,13 @@ const OnFormSubmission: FC<OnFormSubmissionProps> = ({
           </>
         )}
       </div>
-      <div className="max-w-[400px] w-full flex flex-col h-full shadow-sm rounded-xl border p-4">
+      <div className="max-w-[400px] w-full flex flex-col h-full overflow-y-auto shadow-sm rounded-xl border p-4">
         <div className="pb-4 border-b mb-8 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <NotebookPen className="w-5 h-5" />
             <h2 className="text-lg font-extrabold">On Form Submission</h2>
           </div>
-          {state !== "listening" && (
+          {state !== "running" && (
             <Button onClick={testHandler} size={"sm"}>
               Listen for test event
             </Button>
