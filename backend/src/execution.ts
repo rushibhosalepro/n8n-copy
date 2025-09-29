@@ -91,7 +91,6 @@ export class ExecutionManager {
 
     const prompt = Mustache.render(node.parameters?.prompt ?? "", payload);
 
-    console.log(`prompt ---> `, prompt);
     if (connections && connections.main && connections.main[0]) {
       for (const child of connections.main[0]) {
         const childNode = this.getNodeById(child.id, wf.nodes);
@@ -104,7 +103,6 @@ export class ExecutionManager {
     }
     if (llms.length === 0) {
       throw new Error("No LLM node connected to the agent");
-      return;
     }
 
     const llm = await this.initializeLLM(llms[0]);
@@ -113,6 +111,7 @@ export class ExecutionManager {
     }
 
     const langchainTools = tools.map((t) => createTool(t));
+
     const promptT = ChatPromptTemplate.fromMessages([
       ["system", "You are a helpful assistant"],
       ["human", "{input}"],
@@ -121,21 +120,20 @@ export class ExecutionManager {
 
     const agent = await createToolCallingAgent({
       llm: llm,
-      tools: langchainTools,
+      tools: [...langchainTools],
       prompt: promptT,
     });
-    // Create executor
 
     const agentExecutor = new AgentExecutor({
       agent,
-      tools: langchainTools,
+      tools: [...langchainTools],
+      maxIterations: 3,
     });
 
-    // // Run the agent with the input prompt
     const result = await agentExecutor.invoke({
       input: prompt,
     });
-
+    console.log(result);
     return result;
   }
 
