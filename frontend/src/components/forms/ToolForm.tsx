@@ -1,5 +1,6 @@
 import Create from "@/components/credentials/Create";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -21,12 +22,14 @@ interface OpenAIFormProps {
   updateState: (newState: WorkflowState) => void;
   runData: Record<string, any>;
   initialValues?: {
+    name?: string;
     description?: string;
     language?: string;
     code?: string;
   };
   execute: () => void;
   onChange?: (values: {
+    name: string;
     description: string;
     language: string;
     code: string;
@@ -53,6 +56,7 @@ const ToolForm: FC<OpenAIFormProps> = ({
     description: initialValues?.description || "",
     language: initialValues?.language || "",
     code: initialValues?.code || "",
+    name: initialValues?.name || "",
   });
 
   const updateField = (field: keyof typeof formValues, value: any) => {
@@ -108,6 +112,15 @@ const ToolForm: FC<OpenAIFormProps> = ({
           </div>
 
           <form className="space-y-4">
+            <div className="space-y-2">
+              <Label className="font-bold text-sm">Tool name</Label>
+              <Input
+                value={formValues.name}
+                onChange={(e) => updateField("name", e.target.value)}
+                placeholder="name."
+                className=""
+              />
+            </div>
             <div className="space-y-2">
               <Label className="font-bold text-sm">Description</Label>
               <Textarea

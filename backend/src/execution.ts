@@ -1,7 +1,12 @@
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { ChatOpenAI } from "@langchain/openai";
 import axios from "axios";
+import { AgentExecutor, createToolCallingAgent } from "langchain/agents";
 import Mustache from "mustache";
 import nodemailer from "nodemailer";
 import { config } from "./config/env";
+import { createTool } from "./createTool";
 import { prisma } from "./lib/prisma";
 import type { ListenerManager } from "./listener";
 import type { ExecutionRequest, INode, WorkflowType } from "./schema";
@@ -84,7 +89,9 @@ export class ExecutionManager {
     const llms = [];
     const tools = [];
 
-    const prompt = node.parameters.prompt;
+    const prompt = Mustache.render(node.parameters?.prompt ?? "", payload);
+
+    console.log(`prompt ---> `, prompt);
     if (connections && connections.main && connections.main[0]) {
       for (const child of connections.main[0]) {
         const childNode = this.getNodeById(child.id, wf.nodes);
@@ -95,6 +102,72 @@ export class ExecutionManager {
         }
       }
     }
+    if (llms.length === 0) {
+      throw new Error("No LLM node connected to the agent");
+      return;
+    }
+
+    const llm = await this.initializeLLM(llms[0]);
+    if (!llm) {
+      throw new Error("No LLM node connected to the agent");
+    }
+
+    const langchainTools = tools.map((t) => createTool(t));
+    const promptT = ChatPromptTemplate.fromMessages([
+      ["system", "You are a helpful assistant"],
+      ["human", "{input}"],
+      ["placeholder", "{agent_scratchpad}"],
+    ]);
+
+    const agent = await createToolCallingAgent({
+      llm: llm,
+      tools: langchainTools,
+      prompt: promptT,
+    });
+    // Create executor
+
+    const agentExecutor = new AgentExecutor({
+      agent,
+      tools: langchainTools,
+    });
+
+    // // Run the agent with the input prompt
+    const result = await agentExecutor.invoke({
+      input: prompt,
+    });
+
+    return result;
+  }
+
+  async initializeLLM(llmNode: any) {
+    const id = llmNode.parameters.credentials[0].id;
+    const cred = await prisma.credential.findFirst({
+      where: {
+        id,
+      },
+    });
+    if (!cred || !cred.data) return;
+
+    const data = cred.data as any;
+    const apiKey = data.apiKey;
+    const model = llmNode.parameters.model;
+    if (llmNode.type === "OpenAI") {
+      return new ChatOpenAI({
+        model: model,
+        temperature: 0.7,
+        apiKey,
+        streaming: false,
+      });
+    } else if (llmNode.type === "Gemini") {
+      return new ChatGoogleGenerativeAI({
+        model,
+        apiKey,
+        temperature: 0.7,
+        streaming: false,
+      });
+    }
+
+    throw new Error(`Unsupported LLM type: ${llmNode.type}`);
   }
   async sendATextMessage(node: INode, payload: any) {
     const id = node.parameters.credentials[0].id;
@@ -120,6 +193,7 @@ export class ExecutionManager {
 
     return res.data;
   }
+
   async sendAMessage(node: INode, payload: any) {
     const id = node.parameters.credentials[0].id;
     const cred = await prisma.credential.findFirst({
