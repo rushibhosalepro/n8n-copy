@@ -6,8 +6,9 @@ export const TriggerNode = z.enum([
   "OnFormSubmissionTrigger",
 ]);
 const ActionNode = z.enum(["GmailNode", "AgentNode", "TelegramNode", "IfNode"]);
-const AIMODELS = z.enum(["Gemini", "OpenAI"]);
-const allNodes = z.union([TriggerNode, ActionNode, AIMODELS]);
+const LLMModels = z.enum(["Gemini", "OpenAI"]);
+const Tools = z.enum(["CodeTool"]);
+const allNodes = z.union([TriggerNode, ActionNode, LLMModels, Tools]);
 const INode = z.object({
   id: z.string(),
   name: z.string(),
@@ -55,4 +56,5 @@ export type INode = z.infer<typeof INode>;
 export type NodesType = z.infer<typeof allNodes>;
 export type TriggerNodesType = z.infer<typeof TriggerNode>;
 export type ActionNodesType = z.infer<typeof ActionNode>;
-export type AIMOdelType = z.infer<typeof AIMODELS>;
+export type LLMModelsType = z.infer<typeof LLMModels>;
+export type ToolsType = z.infer<typeof Tools>;

@@ -2,48 +2,98 @@ import axios from "axios";
 import Mustache from "mustache";
 import nodemailer from "nodemailer";
 import { config } from "./config/env";
-import { getExecutionOrder } from "./lib";
 import { prisma } from "./lib/prisma";
 import type { ListenerManager } from "./listener";
-import type { ExecutionRequest, INode } from "./schema";
+import type { ExecutionRequest, INode, WorkflowType } from "./schema";
 export interface ExecutionSequence {
-  nodes: INode[];
+  wf: WorkflowType;
   destinationNodeId?: string;
 }
 
 export class ExecutionManager {
   private executionOrder: Map<string, ExecutionSequence> = new Map();
   private listenerManager: ListenerManager;
+
   constructor(listenerManager: ListenerManager) {
     this.listenerManager = listenerManager;
   }
-  executionFlow(webhookId: string, payload: ExecutionRequest) {
-    const order = getExecutionOrder(payload.workflowData, payload.startNodes);
-    if (order && order.length > 0) {
-      this.executionOrder.set(webhookId, {
-        destinationNodeId: payload.destinationNode,
-        nodes: order,
+
+  registerWf(webhookId: string, payload: ExecutionRequest) {
+    this.executionOrder.set(webhookId, {
+      destinationNodeId: payload.destinationNode,
+      wf: payload.workflowData,
+    });
+  }
+
+  getWf(webhookId: string) {
+    if (this.executionOrder.get(webhookId))
+      return this.executionOrder.get(webhookId)?.wf;
+    return null;
+  }
+
+  getNodeByWebhookId(webhookId: string, nodes: INode[]) {
+    return nodes.find((n) => n.webhookId === webhookId);
+  }
+  getNodeById(id: string, nodes: INode[]) {
+    return nodes.find((n) => n.id === id);
+  }
+  async executeWf(webhookId: string, payload: any) {
+    const wf = this.getWf(webhookId);
+    if (!wf) return payload;
+
+    const triggerNode = this.getNodeByWebhookId(webhookId, wf.nodes);
+    const queue: { node: INode; payload: any }[] = [];
+    if (triggerNode) queue.push({ node: triggerNode, payload });
+
+    while (queue.length > 0) {
+      const { node, payload } = queue.shift()!;
+      let result: any = payload;
+
+      if (node.type === "GmailNode") {
+        result = await this.sendAMessage(node, payload);
+      } else if (node.type === "TelegramNode") {
+        result = await this.sendATextMessage(node, payload);
+      } else if (node.type === "AgentNode") {
+        result = await this.executeAgent(node, payload, wf);
+      }
+
+      const payloadToSend = {
+        id: node.webhookId,
+        data: { ...result },
+      };
+      this.listenerManager.emit(webhookId, {
+        type: "webhook_event",
+        payload: payloadToSend,
       });
+
+      const connections = wf.connections[node.id];
+      if (connections && connections.main && connections.main[0]) {
+        for (const child of connections.main[0]) {
+          const childNode = this.getNodeById(child.id, wf.nodes);
+          if (childNode) {
+            queue.push({ node: childNode, payload: result });
+          }
+        }
+      }
     }
   }
 
-  execute(webhookId: string, payload: any) {
-    const sequence = this.getExecutionSequence(webhookId);
-    let prevPayload = payload;
-    if (!sequence) return;
-    for (const node of sequence.nodes) {
-      if (node.webhookId === webhookId) continue;
+  async executeAgent(node: INode, payload: any, wf: WorkflowType) {
+    const connections = wf.connections[node.id];
 
-      if (node.type === "GmailNode") {
-        payload = this.sendAMessage(node, payload);
-      } else if (node.type === "TelegramNode") {
-        payload = this.sendATextMessage(node, payload);
+    const llms = [];
+    const tools = [];
+
+    const prompt = node.parameters.prompt;
+    if (connections && connections.main && connections.main[0]) {
+      for (const child of connections.main[0]) {
+        const childNode = this.getNodeById(child.id, wf.nodes);
+        if (childNode?.type === "Gemini" || childNode?.type === "OpenAI") {
+          llms.push(childNode);
+        } else if (childNode?.type === "CodeTool") {
+          tools.push(childNode);
+        }
       }
-
-      this.listenerManager.emit(webhookId, {
-        id: node.webhookId,
-        payload,
-      });
     }
   }
   async sendATextMessage(node: INode, payload: any) {
@@ -95,11 +145,10 @@ export class ExecutionManager {
       },
     });
 
-    const params = node.parameters;
-
     const to = Mustache.render(node.parameters.to, payload);
     const subject = Mustache.render(node.parameters.subject, payload);
     const message = Mustache.render(node.parameters.message, payload);
+
     const mailOptions = {
       to: to,
       subject: subject,

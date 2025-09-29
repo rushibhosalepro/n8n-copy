@@ -14,7 +14,9 @@ export const TriggerNode = z.enum([
 ]);
 const ActionNode = z.enum(["GmailNode", "AgentNode", "TelegramNode", "IfNode"]);
 
-const allNodes = z.union([TriggerNode, ActionNode]);
+const LLMModels = z.enum(["Gemini", "OpenAI"]);
+const Tools = z.enum(["CodeTool"]);
+const allNodes = z.union([TriggerNode, ActionNode, LLMModels, Tools]);
 const INode = z.object({
   id: z.string(),
   name: z.string(),

@@ -1,4 +1,11 @@
-import { ActionNodesType, INode, NodesType, TriggerNodesType } from "@/schema";
+import {
+  ActionNodesType,
+  INode,
+  LLMModelsType,
+  NodesType,
+  ToolsType,
+  TriggerNodesType,
+} from "@/schema";
 import type { Node } from "@xyflow/react";
 import { nanoid } from "nanoid";
 
@@ -9,6 +16,9 @@ const TRIGGER_NODE_TYPES: TriggerNodesType[] = [
   "WebhookTrigger",
   "OnFormSubmissionTrigger",
 ];
+
+const LLM_NODE_TYPES: LLMModelsType[] = ["Gemini", "OpenAI"];
+
 export const getNodeName = (type: NodesType): string => {
   const triggerNames: Record<TriggerNodesType, string> = {
     ManualTrigger: "Manual Trigger",
@@ -23,17 +33,37 @@ export const getNodeName = (type: NodesType): string => {
     IfNode: "If Condition",
   };
 
-  if (type in triggerNames) {
-    return triggerNames[type as TriggerNodesType];
-  }
+  const LLNames: Record<LLMModelsType, string> = {
+    Gemini: "Gemini",
+    OpenAI: "OpenAI",
+  };
 
-  if (type in actionNames) {
-    return actionNames[type as ActionNodesType];
-  }
+  const Tools: Record<ToolsType, string> = {
+    CodeTool: "Code Tool",
+  };
 
+  if (type in triggerNames) return triggerNames[type as TriggerNodesType];
+  if (type in actionNames) return actionNames[type as ActionNodesType];
+  if (type in LLNames) return LLNames[type as LLMModelsType];
+  if (type in Tools) return Tools[type as ToolsType];
   return "Unknown Node";
 };
 
+const resolveNodeCategory = (type: NodesType): string => {
+  if (TRIGGER_NODE_TYPES.includes(type as TriggerNodesType)) return "trigger";
+  if (type === "AgentNode") return "agent";
+  if (LLM_NODE_TYPES.includes(type as LLMModelsType)) return "ai";
+  if (type === "CodeTool") return "codeTool";
+  return "action";
+};
+
+export const getSourceHandle = (node: INode) => {
+  if (LLM_NODE_TYPES.includes(node.type as LLMModelsType)) {
+    return "out-llm";
+  } else if (node.type === "CodeTool") return "out-tools";
+
+  return null;
+};
 export const createNode = (node: Partial<INode>): Node<INode> => {
   const internalNode: INode = {
     id: node.id ?? generateId(),
@@ -47,11 +77,7 @@ export const createNode = (node: Partial<INode>): Node<INode> => {
 
   return {
     id: internalNode.id,
-    type: TRIGGER_NODE_TYPES.includes(internalNode.type as TriggerNodesType)
-      ? "trigger"
-      : internalNode.type === "AgentNode"
-      ? "agent"
-      : "action",
+    type: resolveNodeCategory(internalNode.type),
     position: {
       x: internalNode.position[0],
       y: internalNode.position[1],

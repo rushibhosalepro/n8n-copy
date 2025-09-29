@@ -48,13 +48,12 @@ export class ListenerManager {
     }
   }
 
-  emit(webhookId: string, data: any) {
+  async emit(webhookId: string, data: any) {
     const listener = this.listeners.get(webhookId);
     if (!listener) return;
-
-    listener.sockets.forEach((ws) => {
+    listener.sockets.forEach(async (ws) => {
       if (ws.readyState === ws.OPEN) {
-        ws.send(JSON.stringify(data));
+        await ws.send(JSON.stringify(data));
       }
     });
   }

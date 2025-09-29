@@ -444,13 +444,13 @@ app.all("/webhook-test/*url", async (req, res) => {
       webhookUrl: `${config.url}:${config.port}/webhook-test/${webhookId}`,
     };
 
-    listenerManager.emit(webhookId, { type: "webhook_event", payload });
+    // listenerManager.emit(webhookId, { type: "webhook_event", payload });
 
-    await executionManager.execute(webhookId, payload);
+    await executionManager.executeWf(webhookId, payload);
 
-    listenerManager.emit(webhookId, { type: "execution_completed", payload });
+    // listenerManager.emit(webhookId, { type: "execution_completed", payload });
 
-    listenerManager.removeListener(webhookId);
+    // listenerManager.removeListener(webhookId);
 
     res.json({ msg: "Webhook received and workflow executed" });
   } catch (err) {
@@ -475,7 +475,7 @@ app.post("/run", (req, res) => {
 
   triggerNodes.forEach((node: INode) => {
     listenerManager.addListener(node);
-    executionManager.executionFlow(node.webhookId, payload);
+    executionManager.registerWf(node.webhookId, payload);
   });
 
   res.json({ message: "ready to execute" });
@@ -511,11 +511,7 @@ app.post("/:webhookId", async (req, res) => {
     return res.status(404).json({ error: "Webhook not registered" });
   }
 
-  executionManager.execute(webhookId, data);
-  const payload = { data, id: webhookId };
-  listenerManager.emit(webhookId, { type: "execution_completed", payload });
-
-  listenerManager.removeListener(webhookId);
+  await executionManager.executeWf(webhookId, data);
 
   res.json({ msg: "Webhook received and workflow executed" });
 });

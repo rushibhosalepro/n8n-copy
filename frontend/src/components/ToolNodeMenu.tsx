@@ -1,3 +1,4 @@
+"use client";
 import {
   Select,
   SelectContent,
@@ -5,25 +6,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { AIMOdelType, NodesType } from "@/schema";
+import { NodesType, ToolsType } from "@/schema";
 import { FC } from "react";
 
-const aiModels: { label: string; value: AIMOdelType }[] = [
-  { label: "Gemini", value: "Gemini" },
-  { label: "OpenAI", value: "OpenAI" },
+const tools: { label: string; value: ToolsType }[] = [
+  { label: "Code Tool", value: "CodeTool" },
 ];
 interface Props {
   open: boolean;
   onSelect: (nodeType: NodesType) => void;
 }
-const AIModelMenu: FC<Props> = ({ open, onSelect }) => {
+const ToolNodeMenu: FC<Props> = ({ open, onSelect }) => {
   return (
     <Select open={open} onValueChange={(value) => onSelect(value as NodesType)}>
       <SelectTrigger className="min-w-[200px]">
-        <SelectValue placeholder="llm" />
+        <SelectValue placeholder="tools" />
       </SelectTrigger>
       <SelectContent>
-        {aiModels.map(({ label, value }) => (
+        {tools.map(({ label, value }) => (
           <SelectItem key={value} value={value}>
             {label}
           </SelectItem>
@@ -33,4 +33,4 @@ const AIModelMenu: FC<Props> = ({ open, onSelect }) => {
   );
 };
 
-export default AIModelMenu;
+export default ToolNodeMenu;

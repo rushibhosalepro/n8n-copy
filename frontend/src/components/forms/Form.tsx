@@ -1,9 +1,13 @@
 "use client";
 
+import AgentForm from "@/components/forms/AgentForm";
+import GeminiForm from "@/components/forms/GeminiForm";
 import Gmail from "@/components/forms/Gmail";
 import OnFormSubmission from "@/components/forms/OnFormSubmission";
 import onWebhook from "@/components/forms/onWebhook";
+import OpenAIForm from "@/components/forms/OpenAIForm";
 import Telegram from "@/components/forms/Telegram";
+import ToolForm from "@/components/forms/ToolForm";
 import { getPreviousNode } from "@/lib/execution";
 import { WorkflowType } from "@/schema";
 import { WorkflowState } from "@/types";
@@ -27,6 +31,10 @@ const AvailableForms = {
   WebhookTrigger: onWebhook,
   GmailNode: Gmail,
   TelegramNode: Telegram,
+  AgentNode: AgentForm,
+  Gemini: GeminiForm,
+  OpenAI: OpenAIForm,
+  CodeTool: ToolForm,
 };
 type AvailableFormKey = keyof typeof AvailableForms;
 

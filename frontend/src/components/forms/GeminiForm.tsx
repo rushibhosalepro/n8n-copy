@@ -1,7 +1,5 @@
 import Create from "@/components/credentials/Create";
-import Loader from "@/components/Loader";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -10,14 +8,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { getCredential } from "@/lib/getCredentials";
 import { INode } from "@/schema";
 import { WorkflowState } from "@/types";
-import { Mail } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Bot, Loader } from "lucide-react";
+import { FC, useEffect, useState } from "react";
 
-interface GmailProps {
+interface GeminiFormProps {
   prevNode?: INode | null;
   webhookId: string;
   state: WorkflowState;
@@ -25,65 +22,50 @@ interface GmailProps {
   runData: Record<string, any>;
   initialValues?: {
     credentials?: { name: string; id: string }[];
-    resource?: string;
-    operation?: string;
-    to?: string;
-    subject?: string;
-    message?: string;
+    model?: string;
   };
   execute: () => void;
   onChange?: (values: {
     credentials: { name: string; id: string }[];
-    resource: string;
-    operation: string;
-    to: string;
-    subject: string;
-    message: string;
+    model: string;
   }) => void;
 }
 
-const Gmail = ({
+const availableModels = [
+  { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
+  { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash (Free)" },
+  { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro" },
+  { id: "gemini-1.0-pro", name: "Gemini 1.0 Pro" },
+];
+
+const GeminiForm: FC<GeminiFormProps> = ({
   state,
-  updateState: setState,
-  initialValues,
-  onChange,
+  prevNode,
   execute,
   runData,
+  updateState: setState,
   webhookId,
-  prevNode,
-}: GmailProps) => {
+  initialValues,
+  onChange,
+}) => {
   const [availableCreds, setAvailableCreds] = useState<
     { id: string; name: string }[]
   >([]);
+  const prevNodeEvents = runData[prevNode?.webhookId as string];
+  const nodeEvents = runData[webhookId];
+
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
 
   const [formValues, setFormValues] = useState({
     credentials: initialValues?.credentials || [],
-    resource: initialValues?.resource || "",
-    operation: initialValues?.operation || "",
-    to: initialValues?.to || "",
-    subject: initialValues?.subject || "",
-    message: initialValues?.message || "",
+    model: initialValues?.model || "gemini-2.5-pro",
   });
-  const prevNodeEvents = runData[prevNode?.webhookId as string];
-  const nodeEvents = runData[webhookId];
 
   const updateField = (field: keyof typeof formValues, value: any) => {
     const updated = { ...formValues, [field]: value };
     setFormValues(updated);
     if (onChange) onChange(updated);
   };
-
-  useEffect(() => {
-    const getCreds = async () => {
-      const creds = await getCredential("GmailNode");
-      setAvailableCreds(creds);
-      if (!formValues.credentials.length && creds.length) {
-        updateField("credentials", [creds[0]]);
-      }
-    };
-    getCreds();
-  }, []);
 
   const testHandler = async () => {
     try {
@@ -94,13 +76,23 @@ const Gmail = ({
     }
   };
 
+  useEffect(() => {
+    const getCreds = async () => {
+      const creds = await getCredential("GeminiNode");
+      setAvailableCreds(creds);
+      if (!formValues.credentials.length && creds.length) {
+        updateField("credentials", [creds[0]]);
+      }
+    };
+    getCreds();
+  }, []);
+
   return (
     <>
       <Create
         selectedNode={selectedNode}
         onClose={() => setSelectedNode(null)}
       />
-
       <div className="w-full h-full flex items-center gap-2">
         <div className="max-w-sm w-full h-full flex-col gap-4 flex items-center justify-center">
           {prevNodeEvents ? (
@@ -113,7 +105,7 @@ const Gmail = ({
             <>
               <p>No Input data yet</p>
               <Button disabled={state === "running"} onClick={testHandler}>
-                {state === "running" && <Loader />} Execure previous nodes
+                {state === "running" && <Loader />} Execute previous nodes
               </Button>
               <span>(From the earliest node that needs it)</span>
             </>
@@ -122,8 +114,10 @@ const Gmail = ({
         <div className="max-w-[400px] w-full flex flex-col overflow-y-auto h-full shadow-sm rounded-xl border p-4">
           <div className="pb-4 border-b mb-8 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Mail className="w-5 h-5" />
-              <h2 className="text-lg font-extrabold">Send a message</h2>
+              <Bot className="w-5 h-5" />
+              <h2 className="text-lg font-extrabold">
+                Google Gemini Chat Model
+              </h2>
             </div>
             {state !== "running" && (
               <Button onClick={testHandler} size="sm">
@@ -141,7 +135,7 @@ const Gmail = ({
                 required
                 onValueChange={(val) => {
                   if (val === "new") {
-                    setSelectedNode("GmailNode");
+                    setSelectedNode("GeminiNode");
                     return;
                   }
                   const selected = availableCreds.find((c) => c.id === val);
@@ -152,7 +146,7 @@ const Gmail = ({
                 <SelectTrigger className="w-full text-left border p-2 rounded-sm font-medium text-xs">
                   <SelectValue placeholder="Select credential" />
                 </SelectTrigger>
-                <SelectContent className="space-y-4 p-2">
+                <SelectContent className="space-y-2 p-2">
                   {availableCreds.map((c) => (
                     <SelectItem value={c.id} key={c.id}>
                       {c.name}
@@ -164,68 +158,22 @@ const Gmail = ({
             </div>
 
             <div className="space-y-2">
-              <Label className="font-bold text-sm">Resource</Label>
+              <Label className="font-bold text-sm">Model</Label>
               <Select
-                required
-                onValueChange={(val) => updateField("resource", val)}
-                value={formValues.resource}
+                onValueChange={(val) => updateField("model", val)}
+                value={formValues.model}
               >
                 <SelectTrigger className="w-full text-left border p-2 rounded-sm font-medium text-xs">
-                  <SelectValue placeholder="Select resource" />
+                  <SelectValue placeholder="Select model" />
                 </SelectTrigger>
-                <SelectContent className="space-y-4 p-2">
-                  <SelectItem value="message">Message</SelectItem>
+                <SelectContent className="space-y-2 p-2">
+                  {availableModels.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="font-bold text-sm">Operation</Label>
-              <Select
-                required
-                onValueChange={(val) => updateField("operation", val)}
-                value={formValues.operation}
-              >
-                <SelectTrigger className="w-full text-left border p-2 rounded-sm font-medium text-xs">
-                  <SelectValue placeholder="Select operation" />
-                </SelectTrigger>
-                <SelectContent className="space-y-4 p-2">
-                  <SelectItem value="send">Send</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="font-bold text-sm">To</Label>
-              <Input
-                required
-                type="email"
-                placeholder="john@gmail.com"
-                value={formValues.to}
-                onChange={(e) => updateField("to", e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="font-bold text-sm">Subject</Label>
-              <Input
-                required
-                type="text"
-                placeholder="eg. approval required"
-                value={formValues.subject}
-                onChange={(e) => updateField("subject", e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="font-bold text-sm">Message</Label>
-              <Textarea
-                required
-                placeholder="eg. approval required"
-                className="h-32 resize-none"
-                value={formValues.message}
-                onChange={(e) => updateField("message", e.target.value)}
-              />
             </div>
           </form>
         </div>
@@ -246,4 +194,4 @@ const Gmail = ({
   );
 };
 
-export default Gmail;
+export default GeminiForm;

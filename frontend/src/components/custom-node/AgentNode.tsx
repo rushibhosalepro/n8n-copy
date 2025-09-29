@@ -4,19 +4,18 @@ import { Bot } from "lucide-react";
 
 const AgentNode = ({ data }: { data: INode }) => {
   return (
-    <div className="min-w-[60px] text-[8px] font-semibold bg-[#f9fafb] shadow-sm px-4 h-[30px] border border-[#2c2c2c] rounded-[6px] flex items-center justify-center">
-      <p className="flex items-center gap-1">
+    <div className="relative min-w-[80px] h-[60px] text-[8px] font-semibold bg-[#f9fafb] shadow-sm px-4 border border-[#2c2c2c] rounded-[6px] flex flex-col items-center justify-center">
+      <p className="flex items-center gap-1 mb-1">
         <Bot className="w-4 h-4" /> {data.name}
       </p>
-      <Handle id="source" type="source" position={Position.Right} />
-      <Handle id="target" type="target" position={Position.Left} />
+
+      <Handle id="in-main" type="target" position={Position.Left} />
+
       <Handle
-        id="target1"
-        type="target"
+        type="source"
         position={Position.Bottom}
-        style={{
-          left: "30%",
-        }}
+        style={{ left: "30%" }}
+        id="out-llm"
       />
       <div
         className="absolute bottom-[-10px] text-[5px]"
@@ -24,13 +23,12 @@ const AgentNode = ({ data }: { data: INode }) => {
       >
         LLM
       </div>
+
       <Handle
-        id="target2"
-        type="target"
+        type="source"
         position={Position.Bottom}
-        style={{
-          left: "70%",
-        }}
+        style={{ left: "70%" }}
+        id="out-tools"
       />
       <div
         className="absolute bottom-[-10px] text-[5px]"
@@ -38,6 +36,8 @@ const AgentNode = ({ data }: { data: INode }) => {
       >
         TOOLS
       </div>
+
+      <Handle id="out-main" type="source" position={Position.Right} />
     </div>
   );
 };

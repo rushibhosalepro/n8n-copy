@@ -2,13 +2,17 @@
 import ActionNodeMenu from "@/components/ActionNodeMenu";
 import ActionNode from "@/components/custom-node/ActionNode";
 import AgentNode from "@/components/custom-node/AgentNode";
+import AINode from "@/components/custom-node/AINode";
+import CodeToolNode from "@/components/custom-node/CodeToolNode";
 import NullNode from "@/components/custom-node/NullNode";
 import TriggerNode from "@/components/custom-node/TriggerNode";
 import Form from "@/components/forms/Form";
+import LLMModelMenu from "@/components/LLMModelMenu";
+import ToolNodeMenu from "@/components/ToolNodeMenu";
 import TriggerNodeMenu from "@/components/TriggerNodeMenu";
 import WorkflowHeader from "@/components/WorkflowHeader";
 import useSocket from "@/hooks/useSocket";
-import { createNode, generateId } from "@/lib/createNode";
+import { createNode, generateId, getSourceHandle } from "@/lib/createNode";
 import { executeWorkflow } from "@/lib/execution";
 import { NodesType, WorkflowType } from "@/schema";
 import { WorkflowState } from "@/types";
@@ -35,6 +39,8 @@ const nodeTypes = {
   action: ActionNode,
   null: NullNode,
   agent: AgentNode,
+  ai: AINode,
+  codeTool: CodeToolNode,
 };
 
 const nullNode = {
@@ -63,8 +69,12 @@ const FlowContent: FC<FlowContentProps> = ({ wId, workflow, setWorkflow }) => {
   const [showAndOpenTriggerNodeMenu, setShowAndOpenTriggerNodeMenu] =
     useState(false);
 
+  const [showAndOpenLLMNodeMenu, setShowAndOpenLLMNodeMenu] = useState(false);
+  const [showAndOpenToolNodeMenu, setShowAndOpenToolNodeMenu] = useState(false);
+
   const [pendingConnection, setPendingConnection] = useState<{
     fromNodeId: string;
+    fromHandleId: string;
     position: { x: number; y: number };
   } | null>(null);
 
@@ -78,9 +88,9 @@ const FlowContent: FC<FlowContentProps> = ({ wId, workflow, setWorkflow }) => {
     if (!socket) return;
 
     const handleMessage = (msg: any) => {
-      console.log(`handler msgs`, msg);
       try {
         const data = JSON.parse(msg.data);
+        console.log(`recieved`, JSON.stringify(data.payload));
 
         if (data.type === "webhook_event" && data.payload) {
           const webhookId = String(data.payload.id);
@@ -115,9 +125,11 @@ const FlowContent: FC<FlowContentProps> = ({ wId, workflow, setWorkflow }) => {
           const targetNode = initialNodes.find(
             (n) => n.data.id === targetNodeInfo.id
           );
+
           if (targetNode) {
             initialEdges.push({
               id: `e${sourceId}-${targetNode.id}`,
+              sourceHandle: getSourceHandle(targetNode?.data),
               source: sourceId,
               target: targetNode.id,
               markerEnd: {
@@ -185,10 +197,74 @@ const FlowContent: FC<FlowContentProps> = ({ wId, workflow, setWorkflow }) => {
     }
   };
 
+  const onToolNodeItemClicked = (type: NodesType) => {
+    const pos = pendingConnection?.position ?? { x: 0, y: 0 };
+
+    console.log(type);
+    const newNode = createNode({
+      type,
+      position: [pos.x, pos.y],
+      webhookId: generateId(),
+    });
+    setWorkflow((prev) => ({
+      ...prev,
+      nodes: [...prev.nodes, newNode.data],
+    }));
+
+    setNodes((prev) => [...prev, newNode]);
+
+    if (pendingConnection) {
+      setEdges((eds) =>
+        eds.concat({
+          id: `e${pendingConnection.fromNodeId}-${newNode.id}`,
+          source: pendingConnection.fromNodeId,
+          sourceHandle: "out-tools",
+          target: newNode.id,
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            orient: "auto-start-reverse",
+          },
+        })
+      );
+      setWorkflow((prev) => {
+        const sourceId = pendingConnection.fromNodeId;
+
+        const prevMain = prev.connections[sourceId]?.main || [[]];
+
+        const updatedMain = [...prevMain];
+        if (!updatedMain[0]) updatedMain[0] = [];
+
+        updatedMain[0] = [
+          ...updatedMain[0],
+          {
+            id: newNode.id,
+            name: newNode.data.name,
+            index: 0,
+          },
+        ];
+
+        return {
+          ...prev,
+          connections: {
+            ...prev.connections,
+            [sourceId]: {
+              main: updatedMain,
+            },
+          },
+        };
+      });
+
+      setPendingConnection(null);
+    }
+
+    setConfigurationNode(newNode);
+    setShowAndOpenToolNodeMenu(false);
+  };
+
   const onTriggerNodeItemClicked = (type: NodesType) => {
     const newNode = createNode({
       type,
-      position: [0, 0],
+      position: [-200, 0],
       webhookId: generateId(),
     });
 
@@ -263,6 +339,70 @@ const FlowContent: FC<FlowContentProps> = ({ wId, workflow, setWorkflow }) => {
     setShowAndOpenActionNodeMenu(false);
   };
 
+  const onLLMNodeItemClicked = (type: NodesType) => {
+    const pos = pendingConnection?.position ?? { x: 0, y: 0 };
+
+    console.log(type);
+    const newNode = createNode({
+      type,
+      position: [pos.x, pos.y],
+      webhookId: generateId(),
+    });
+    setWorkflow((prev) => ({
+      ...prev,
+      nodes: [...prev.nodes, newNode.data],
+    }));
+
+    setNodes((prev) => [...prev, newNode]);
+
+    if (pendingConnection) {
+      setEdges((eds) =>
+        eds.concat({
+          id: `e${pendingConnection.fromNodeId}-${newNode.id}`,
+          source: pendingConnection.fromNodeId,
+          sourceHandle: "out-llm",
+          target: newNode.id,
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            orient: "auto-start-reverse",
+          },
+        })
+      );
+      setWorkflow((prev) => {
+        const sourceId = pendingConnection.fromNodeId;
+
+        const prevMain = prev.connections[sourceId]?.main || [[]];
+
+        const updatedMain = [...prevMain];
+        if (!updatedMain[0]) updatedMain[0] = [];
+
+        updatedMain[0] = [
+          ...updatedMain[0],
+          {
+            id: newNode.id,
+            name: newNode.data.name,
+            index: 0,
+          },
+        ];
+
+        return {
+          ...prev,
+          connections: {
+            ...prev.connections,
+            [sourceId]: {
+              main: updatedMain,
+            },
+          },
+        };
+      });
+
+      setPendingConnection(null);
+    }
+
+    setConfigurationNode(newNode);
+    setShowAndOpenLLMNodeMenu(false);
+  };
+
   const handleNodeDragStop = (_evt: React.MouseEvent, node: Node) => {
     setNodes((prev) =>
       prev.map((n) =>
@@ -299,14 +439,25 @@ const FlowContent: FC<FlowContentProps> = ({ wId, workflow, setWorkflow }) => {
         const { clientX, clientY } =
           "changedTouches" in event ? event.changedTouches[0] : event;
 
+        console.log(`data record : `, connectionState);
         const pos = screenToFlowPosition({ x: clientX, y: clientY });
 
+        const fromNode = connectionState.fromNode;
+        const fromHandle = connectionState.fromHandle;
         setPendingConnection({
           fromNodeId: connectionState.fromNode.id,
           position: pos,
+          fromHandleId: connectionState.fromHandle.id,
         });
-
-        setShowAndOpenActionNodeMenu(true);
+        if (fromNode.data.type === "AgentNode") {
+          if (fromHandle.id === "out-llm") {
+            setShowAndOpenLLMNodeMenu(true);
+          } else if (fromHandle.id === "out-tools") {
+            setShowAndOpenToolNodeMenu(true);
+          }
+        } else {
+          setShowAndOpenActionNodeMenu(true);
+        }
       }
     },
     [screenToFlowPosition]
@@ -356,11 +507,16 @@ const FlowContent: FC<FlowContentProps> = ({ wId, workflow, setWorkflow }) => {
             onSelect={onActionNodeItemClicked}
             open={showAndOpenActionNodeMenu}
           />
-          {/* 
-          <AIModelMenu
-            onSelect={onActionNodeItemClicked}
-            open={showAndOpenActionNodeMenu}
-          /> */}
+
+          <LLMModelMenu
+            onSelect={onLLMNodeItemClicked}
+            open={showAndOpenLLMNodeMenu}
+          />
+
+          <ToolNodeMenu
+            onSelect={onToolNodeItemClicked}
+            open={showAndOpenToolNodeMenu}
+          />
         </div>
       </div>
       {configurationNode && (
